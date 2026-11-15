@@ -1,0 +1,690 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Keyrider - צעצוע קונספט</title>
+<style>
+  :root{
+    --c0:#ff4d6d; --c1:#ff9f1c; --c2:#ffe14d; --c3:#3ddc97; --c4:#4cc9f0;
+    --bg:#0b0620; --ink:#f4f1ff; --muted:#a79fd0;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);
+    font-family:system-ui,-apple-system,"Segoe UI",Arial,sans-serif;overflow:hidden;touch-action:none;user-select:none;-webkit-user-select:none}
+  #wrap{position:fixed;inset:0;display:flex;flex-direction:column}
+  #stage{position:relative;flex:1;min-height:0}
+  canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+  #keys{height:clamp(96px,20vh,170px);display:flex;direction:ltr;gap:4px;padding:6px 6px calc(8px + env(safe-area-inset-bottom));background:#120a2c;border-top:1px solid #2a1f57}
+  .key{flex:1;position:relative;border-radius:0 0 12px 12px;background:linear-gradient(#f7f5ff,#d9d4f2);
+    box-shadow:inset 0 -6px 0 rgba(0,0,0,.18),0 2px 0 #000;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;
+    padding-bottom:10px;color:#1b1340;font-weight:800;font-size:clamp(15px,4.2vw,22px);transition:transform .05s}
+  .key::before{content:"";position:absolute;top:0;left:0;right:0;height:8px;background:var(--kc);border-radius:2px}
+  .key small{font-size:11px;font-weight:600;color:#6b6396;margin-top:2px;direction:ltr}
+  .key.hint{box-shadow:inset 0 -6px 0 rgba(0,0,0,.18),0 0 0 3px var(--kc),0 0 18px var(--kc)}
+  .key.down{transform:translateY(3px);background:linear-gradient(#e6e1ff,#c4bde8)}
+  #hud{position:absolute;top:0;left:0;right:0;padding:calc(10px + env(safe-area-inset-top)) 12px 26px;background:linear-gradient(rgba(8,3,22,.85),rgba(8,3,22,0));display:flex;justify-content:space-between;pointer-events:none;font-weight:800;text-shadow:0 2px 8px #000}
+  #hud .big{font-size:26px}
+  #hud .lbl{font-size:11px;color:var(--muted);font-weight:600;display:block}
+  .overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(8,4,24,.78);backdrop-filter:blur(3px);padding:18px;z-index:5}
+  .card{max-width:420px;width:100%;background:#170d38;border:1px solid #3a2b7a;border-radius:18px;padding:20px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.6)}
+  .logo{font-size:40px;font-weight:900;letter-spacing:2px;direction:ltr;
+    background:linear-gradient(90deg,var(--c0),var(--c1),var(--c2),var(--c3),var(--c4));-webkit-background-clip:text;background-clip:text;color:transparent}
+  .card p{color:#cfc8f4;line-height:1.5;font-size:15px;margin:10px 0}
+  .btn{display:block;width:100%;margin:8px 0;padding:14px;border-radius:12px;border:0;font-size:17px;font-weight:800;color:#120a2c;background:linear-gradient(90deg,var(--c3),var(--c4));cursor:pointer}
+  .btn.alt{background:#2a1f57;color:var(--ink)}
+  .btn.sel{outline:3px solid var(--c2)}
+  .row{display:flex;gap:8px}.row .btn{flex:1;font-size:14px;padding:12px 6px}
+  .note{font-size:12px;color:var(--muted)}
+  #msg{min-height:18px;font-size:13px;color:var(--c2)}
+  .stat{display:flex;justify-content:space-around;margin:12px 0}
+  .stat div{font-size:24px;font-weight:900}.stat span{display:block;font-size:11px;color:var(--muted);font-weight:600}
+  .hidden{display:none!important}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="stage">
+    <canvas id="cv"></canvas>
+    <div id="hud" class="hidden">
+      <div><span class="lbl">מקום</span><span class="big" id="hPlace">1/4</span></div>
+      <div style="text-align:center"><span class="lbl">קומבו</span><span class="big" id="hCombo">0</span></div>
+      <div style="text-align:left"><span class="lbl">מהירות</span><span class="big" id="hSpeed">100</span></div>
+    </div>
+
+    <div class="overlay" id="startOv">
+      <div class="card">
+        <div class="logo">KEYRIDER</div>
+        <p id="modeDesc">שערים מגיעים בנתיבים. כשהשער מגיע לקו, נגן את התו שלו כדי לעבור בו ולהאיץ.</p>
+        <div class="row">
+          <button class="btn alt sel" data-game="song">מרוץ שיר</button>
+          <button class="btn alt" data-game="run">ריצה חופשית</button>
+        </div>
+        <div class="row">
+          <button class="btn alt sel" data-mode="touch">מסך / מקלדת</button>
+          <button class="btn alt" data-mode="midi">אורגן MIDI</button>
+          <button class="btn alt" data-mode="mic">אורגן במיקרופון</button>
+        </div>
+        <div id="msg"></div>
+        <button class="btn" id="goBtn">יאללה, מרוץ!</button>
+        <p class="note">במחשב: המקשים A S D F G. במיקרופון עדיף אוזניות, כדי שהמשחק ישמע רק את האורגן.</p>
+      </div>
+    </div>
+
+    <div class="overlay hidden" id="endOv">
+      <div class="card">
+        <div class="logo" style="font-size:28px" id="endTitle">מקום 1!</div>
+        <div class="stat">
+          <div id="sAcc">0%<span>דיוק</span></div>
+          <div id="sPerf">0<span>מושלמים</span></div>
+          <div id="sCombo">0<span>קומבו שיא</span></div>
+        </div>
+        <p id="revealTxt"></p>
+        <p class="note" id="calTxt"></p>
+        <button class="btn hidden" id="reviveBtn">עוד חיים (צפייה בפרסומת)</button>
+        <button class="btn" id="replayBtn">השמע שוב את מה שניגנת</button>
+        <button class="btn alt" id="againBtn">מרוץ נוסף</button>
+        <button class="btn alt" id="menuBtn">החלף קלט</button>
+      </div>
+    </div>
+  </div>
+  <div id="keys"></div>
+  <div class="overlay hidden" id="adOv" style="position:fixed;z-index:20"><div class="card"><p class="note">פרסומת לדוגמה</p><div class="logo" style="font-size:56px" id="adCount">3</div><p>כאן תופיע פרסומת קצרה. בגרסה האמיתית: רק אם השחקן בחר לצפות.</p></div></div>
+</div>
+
+<script>
+(() => {
+'use strict';
+// ---------- constants ----------
+const NOTE_NAMES = ['דו','רה','מי','פה','סול'];
+const KEY_LETTERS = ['A','S','D','F','G'];
+const COLORS = ['#ff4d6d','#ff9f1c','#ffe14d','#3ddc97','#4cc9f0'];
+const PC_TO_LANE = {0:0,2:1,4:2,5:3,7:4};
+const LANE_MIDI = [60,62,64,65,67];
+const BPM = 100, BEAT = 60/BPM, LEAD_BEATS = 4;
+const LOOK = 1.9;           // seconds a gate is visible before the hit line
+const W_PERFECT = 0.085, W_GOOD = 0.17, W_ACCEPT = 0.24;
+// Ode to Joy (Beethoven, public domain) in C, 5 notes: [lane, beatStart, beats]
+const SONG = (() => {
+  const s = [[2,1],[2,1],[3,1],[4,1],[4,1],[3,1],[2,1],[1,1],[0,1],[0,1],[1,1],[2,1],[2,1.5],[1,.5],[1,2],
+             [2,1],[2,1],[3,1],[4,1],[4,1],[3,1],[2,1],[1,1],[0,1],[0,1],[1,1],[2,1],[1,1.5],[0,.5],[0,2]];
+  let b = 0; return s.map(([l,d]) => { const n = {lane:l, beat:b, dur:d}; b += d; return n; });
+})();
+const SONG_BEATS = 32;
+const CHORDS = ['C','G','C','G','C','G','C','GC']; // per bar
+const CHORD_ROOT = {C:48, G:43};
+const CHORD_NOTES = {C:[60,64,67], G:[59,62,67]};
+
+// ---------- state ----------
+let mode = 'touch';
+let ctx = null, master = null;
+let offsets = {touch:0, midi:0, mic:0};
+try { const o = JSON.parse(localStorage.getItem('keyrush_offsets')||'null'); if (o) offsets = Object.assign(offsets,o); } catch(e){}
+let phase = 'menu'; // menu | race | replay | end | run | over
+let game = 'song';
+const RUN = {lives:3, coins:0, coinMul:1, mulLeft:0, revived:false, nextBeatT:0, beatIdx:0, lane:2, drumIdx:0, beats:[], group:0, best:0, deathSt:0};
+try { RUN.best = +localStorage.getItem('keyrider_best') || 0; } catch(e){}
+let songStart = 0, gates = [], played = [], rawDts = [];
+let combo = 0, maxCombo = 0, perfects = 0, goods = 0, misses = 0, wrongs = 0;
+let boost = 0, dist = 0, rivals = [], boardX = 2, boardTarget = 2, wobble = 0, flashes = [], particles = [], popups = [];
+let glow = 0, lastT = 0, replayData = null;
+let midiAccess = null, micStream = null, analyser = null, micBuf = null, yinBuf = null;
+const det = {lastPc:null, cand:null, stable:0, minRms:1, lastTrig:0, silent:0};
+
+// ---------- DOM ----------
+const cv = document.getElementById('cv'), g = cv.getContext('2d');
+const keysEl = document.getElementById('keys');
+const $ = id => document.getElementById(id);
+const keyEls = NOTE_NAMES.map((n,i) => {
+  const k = document.createElement('div');
+  k.className = 'key'; k.style.setProperty('--kc', COLORS[i]);
+  k.innerHTML = n + '<small>' + KEY_LETTERS[i] + '</small>';
+  k.addEventListener('pointerdown', e => { e.preventDefault(); press(i, nowT(), 'touch'); k.classList.add('down'); });
+  const up = () => k.classList.remove('down');
+  k.addEventListener('pointerup', up); k.addEventListener('pointerleave', up); k.addEventListener('pointercancel', up);
+  keysEl.appendChild(k); return k;
+});
+window.addEventListener('keydown', e => {
+  if (e.repeat) return;
+  const map = {a:0,s:1,d:2,f:3,g:4,'1':0,'2':1,'3':2,'4':3,'5':4};
+  const i = map[e.key.toLowerCase()]; if (i === undefined) return;
+  keyEls[i].classList.add('down'); press(i, nowT(), 'touch');
+});
+window.addEventListener('keyup', e => {
+  const map = {a:0,s:1,d:2,f:3,g:4,'1':0,'2':1,'3':2,'4':3,'5':4};
+  const i = map[e.key.toLowerCase()]; if (i !== undefined) keyEls[i].classList.remove('down');
+});
+
+document.querySelectorAll('[data-mode]').forEach(b => b.addEventListener('click', () => {
+  document.querySelectorAll('[data-mode]').forEach(x => x.classList.remove('sel'));
+  b.classList.add('sel'); mode = b.dataset.mode; $('msg').textContent = '';
+}));
+document.querySelectorAll('[data-game]').forEach(b => b.addEventListener('click', () => {
+  document.querySelectorAll('[data-game]').forEach(x => x.classList.remove('sel')); b.classList.add('sel'); game = b.dataset.game;
+  $('modeDesc').textContent = game === 'run'
+    ? 'מסלול בלי סוף מהתווים שלמדת. הקצב עולה כל 16 פעימות. שער פספוס = חיים פחות. בשערי בחירה מנגנים את התו של מה שרוצים: בוסט או מטבעות.'
+    : 'שערים מגיעים בנתיבים. כשהשער מגיע לקו, נגן את התו שלו כדי לעבור בו ולהאיץ. בסוף שומעים מה ניגנת.';
+}));
+$('goBtn').addEventListener('click', async () => {
+  ensureAudio();
+  const ok = await setupInput();
+  if (!ok) return;
+  game === 'run' ? startRun() : startRace();
+});
+$('againBtn').addEventListener('click', () => { ensureAudio(); game === 'run' ? startRun() : startRace(); });
+$('reviveBtn').addEventListener('click', () => { ensureAudio(); showAdThenRevive(); });
+$('menuBtn').addEventListener('click', () => { $('endOv').classList.add('hidden'); $('startOv').classList.remove('hidden'); phase='menu'; });
+$('replayBtn').addEventListener('click', () => { ensureAudio(); startReplay(); });
+
+// ---------- audio ----------
+function ensureAudio(){
+  if (!ctx) {
+    ctx = new (window.AudioContext||window.webkitAudioContext)({latencyHint:'interactive'});
+    master = ctx.createGain(); master.gain.value = 0.8;
+    const comp = ctx.createDynamicsCompressor(); master.connect(comp); comp.connect(ctx.destination);
+  }
+  if (ctx.state === 'suspended') ctx.resume();
+}
+function nowT(){ return ctx ? ctx.currentTime : 0; }
+const mtof = m => 440*Math.pow(2,(m-69)/12);
+let noiseBuf = null;
+function noise(){
+  if (noiseBuf) return noiseBuf;
+  noiseBuf = ctx.createBuffer(1, ctx.sampleRate*0.5, ctx.sampleRate);
+  const d = noiseBuf.getChannelData(0); for (let i=0;i<d.length;i++) d[i]=Math.random()*2-1; return noiseBuf;
+}
+function env(gn, t, a, peak, dec){ gn.gain.setValueAtTime(0.0001,t); gn.gain.linearRampToValueAtTime(peak,t+a); gn.gain.exponentialRampToValueAtTime(0.0001,t+a+dec); }
+function kick(t,v=1){ const o=ctx.createOscillator(), gn=ctx.createGain(); o.frequency.setValueAtTime(140,t); o.frequency.exponentialRampToValueAtTime(42,t+0.16); env(gn,t,0.003,0.9*v,0.28); o.connect(gn).connect(master); o.start(t); o.stop(t+0.35); }
+function snare(t,v=1){ const s=ctx.createBufferSource(); s.buffer=noise(); const f=ctx.createBiquadFilter(); f.type='bandpass'; f.frequency.value=1900; f.Q.value=.7; const gn=ctx.createGain(); env(gn,t,0.002,0.45*v,0.16); s.connect(f).connect(gn).connect(master); s.start(t); s.stop(t+0.25); }
+function hat(t,v=1){ const s=ctx.createBufferSource(); s.buffer=noise(); const f=ctx.createBiquadFilter(); f.type='highpass'; f.frequency.value=7500; const gn=ctx.createGain(); env(gn,t,0.001,0.16*v,0.05); s.connect(f).connect(gn).connect(master); s.start(t); s.stop(t+0.1); }
+function lead(m,t,dur,v=1){
+  const gn=ctx.createGain(); const f=ctx.createBiquadFilter(); f.type='lowpass'; f.frequency.setValueAtTime(5200,t); f.frequency.exponentialRampToValueAtTime(1400,t+dur);
+  [0,7].forEach((det,i)=>{ const o=ctx.createOscillator(); o.type=i?'sawtooth':'square'; o.frequency.value=mtof(m); o.detune.value=i?det:-4; o.connect(f); o.start(t); o.stop(t+dur+0.3); });
+  gn.gain.setValueAtTime(0.0001,t); gn.gain.linearRampToValueAtTime(0.16*v,t+0.01); gn.gain.setTargetAtTime(0.09*v,t+0.02,0.12); gn.gain.setTargetAtTime(0.0001,t+dur,0.08);
+  f.connect(gn).connect(master);
+}
+function pluck(m,t){ const o=ctx.createOscillator(), gn=ctx.createGain(); o.type='triangle'; o.frequency.value=mtof(m); env(gn,t,0.004,0.28,0.35); o.connect(gn).connect(master); o.start(t); o.stop(t+0.45); }
+function bass(m,t,dur){ const o=ctx.createOscillator(), gn=ctx.createGain(), f=ctx.createBiquadFilter(); o.type='sawtooth'; o.frequency.value=mtof(m); f.type='lowpass'; f.frequency.value=420; gn.gain.setValueAtTime(0.0001,t); gn.gain.linearRampToValueAtTime(0.28,t+0.01); gn.gain.setTargetAtTime(0.0001,t+dur*0.85,0.05); o.connect(f).connect(gn).connect(master); o.start(t); o.stop(t+dur+0.2); }
+function pad(notes,t,dur){ notes.forEach(m=>{ const o=ctx.createOscillator(), gn=ctx.createGain(); o.type='sawtooth'; o.frequency.value=mtof(m); const f=ctx.createBiquadFilter(); f.type='lowpass'; f.frequency.value=900; gn.gain.setValueAtTime(0.0001,t); gn.gain.linearRampToValueAtTime(0.035,t+0.25); gn.gain.setTargetAtTime(0.0001,t+dur-0.1,0.15); o.connect(f).connect(gn).connect(master); o.start(t); o.stop(t+dur+0.6); }); }
+function whoosh(t){ const s=ctx.createBufferSource(); s.buffer=noise(); const f=ctx.createBiquadFilter(); f.type='bandpass'; f.Q.value=1.2; f.frequency.setValueAtTime(600,t); f.frequency.exponentialRampToValueAtTime(3200,t+0.22); const gn=ctx.createGain(); env(gn,t,0.03,0.12,0.22); s.connect(f).connect(gn).connect(master); s.start(t); s.stop(t+0.3); }
+
+function scheduleDrums(start, beats, full){
+  for (let b=-LEAD_BEATS; b<beats; b++){
+    const t = start + b*BEAT;
+    if (b < 0) { hat(t, 1.6); continue; } // count-in clicks
+    const inBar = ((b%4)+4)%4;
+    if (inBar===0 || inBar===2) kick(t, full?1:0.55);
+    if (inBar===1 || inBar===3) snare(t, full?1:0.5);
+    hat(t, full?1:0.6); hat(t+BEAT/2, full?0.7:0.4);
+  }
+}
+function scheduleBacking(start){
+  CHORDS.forEach((c,bar)=>{
+    const t = start + bar*4*BEAT;
+    if (c==='GC'){ bass(CHORD_ROOT.G, t, 2*BEAT); bass(CHORD_ROOT.C, t+2*BEAT, 2*BEAT); pad(CHORD_NOTES.G,t,2*BEAT); pad(CHORD_NOTES.C,t+2*BEAT,2.5*BEAT); return; }
+    const r = CHORD_ROOT[c];
+    [0,1,2,3].forEach(q=> bass(q%2? r+12 : r, t+q*BEAT, BEAT*0.9));
+    pad(CHORD_NOTES[c], t, 4*BEAT);
+  });
+  kick(start+SONG_BEATS*BEAT,1);
+}
+
+// ---------- input setup ----------
+async function setupInput(){
+  const msg = $('msg');
+  if (mode === 'midi') {
+    if (!navigator.requestMIDIAccess) { msg.textContent = 'הדפדפן הזה לא תומך ב-MIDI. נסה בכרום במחשב או באנדרואיד.'; return false; }
+    try {
+      midiAccess = midiAccess || await navigator.requestMIDIAccess();
+      let n = 0; midiAccess.inputs.forEach(inp => { n++; inp.onmidimessage = onMidi; });
+      midiAccess.onstatechange = () => midiAccess.inputs.forEach(inp => inp.onmidimessage = onMidi);
+      if (!n) { msg.textContent = 'לא נמצא אורגן מחובר. חבר בכבל USB ונסה שוב.'; return false; }
+      return true;
+    } catch(e) { msg.textContent = 'הגישה ל-MIDI חסומה כאן. פתח את הקובץ ישירות בכרום.'; return false; }
+  }
+  if (mode === 'mic') {
+    try {
+      micStream = micStream || await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
+      const src = ctx.createMediaStreamSource(micStream);
+      analyser = ctx.createAnalyser(); analyser.fftSize = 2048; src.connect(analyser);
+      micBuf = new Float32Array(analyser.fftSize); yinBuf = new Float32Array(analyser.fftSize/2);
+      return true;
+    } catch(e) { msg.textContent = 'המיקרופון חסום בתצוגה הזו. פתח את הקובץ ישירות בכרום כדי לנסות עם אורגן.'; return false; }
+  }
+  return true;
+}
+function onMidi(e){
+  const [st, note, vel] = e.data; if ((st & 0xf0) !== 0x90 || vel === 0) return;
+  const age = (performance.now() - e.timeStamp)/1000;
+  const pc = note % 12; const lane = PC_TO_LANE[pc];
+  press(lane === undefined ? -1 : lane, nowT() - Math.max(0,Math.min(age,0.1)), 'midi');
+}
+// YIN pitch detection; only the pitch class matters, so octave errors are harmless
+function yin(buf, sr){
+  const N = buf.length, W = N>>1; let rms = 0;
+  for (let i=0;i<N;i++) rms += buf[i]*buf[i]; rms = Math.sqrt(rms/N);
+  if (rms < 0.008) return {f:-1, rms};
+  const minTau = Math.floor(sr/1100), maxTau = Math.min(W-1, Math.floor(sr/70)); const d = yinBuf;
+  let run = 0; d[0] = 1;
+  for (let tau=1; tau<=maxTau; tau++){ let s=0; for (let i=0;i<W;i++){ const x=buf[i]-buf[i+tau]; s+=x*x; } run+=s; d[tau] = run ? s*tau/run : 1; }
+  for (let tau=minTau; tau<=maxTau; tau++){
+    if (d[tau] < 0.13){
+      while (tau+1<=maxTau && d[tau+1] < d[tau]) tau++;
+      const a=d[tau-1], b=d[tau], c=d[tau+1]||b; const den = a+c-2*b; const t2 = den ? tau + (a-c)/(2*den) : tau;
+      return {f: sr/t2, rms};
+    }
+  }
+  return {f:-1, rms};
+}
+function pollMic(){
+  if (!analyser) return;
+  analyser.getFloatTimeDomainData(micBuf);
+  const {f, rms} = yin(micBuf, ctx.sampleRate); const t = nowT();
+  if (rms < det.minRms) det.minRms = rms;
+  if (f < 0) { if (rms < 0.008 && ++det.silent > 3) det.lastPc = null; det.stable = 0; det.cand = null; return; }
+  det.silent = 0;
+  const pc = ((Math.round(69 + 12*Math.log2(f/440)) % 12) + 12) % 12;
+  if (pc === det.cand) det.stable++; else { det.cand = pc; det.stable = 1; }
+  if (det.stable < 2) return;
+  const fresh = pc !== det.lastPc || (rms > det.minRms*1.8 && rms > 0.02);
+  if (fresh && t - det.lastTrig > 0.09){
+    det.lastPc = pc; det.lastTrig = t; det.minRms = rms;
+    const lane = PC_TO_LANE[pc]; press(lane === undefined ? -1 : lane, t - 0.06, 'mic');
+  }
+}
+
+// ---------- race ----------
+function startRace(){
+  $('startOv').classList.add('hidden'); $('endOv').classList.add('hidden'); $('hud').classList.remove('hidden');
+  songStart = nowT() + 0.4 + LEAD_BEATS*BEAT;
+  gates = SONG.map((n,i) => ({...n, id:i, t: n.beat*BEAT, judged:false, result:null, fx:0}));
+  played = []; rawDts = []; combo = maxCombo = perfects = goods = misses = wrongs = 0;
+  boost = 0; dist = 0; boardX = boardTarget = 2; flashes = []; particles = []; popups = []; glow = 0;
+  rivals = [{skill:9, lane:0, d:-40, hue:'#b388ff'},{skill:17, lane:4, d:-20, hue:'#ff7ad9'},{skill:24, lane:1, d:-60, hue:'#7af0ff'}];
+  scheduleDrums(songStart, SONG_BEATS, false);
+  phase = 'race'; replayData = null;
+  const lbl = document.querySelectorAll('#hud .lbl'); lbl[0].textContent = 'מקום'; lbl[2].textContent = 'מהירות';
+  $('sAcc').innerHTML = '0%<span>דיוק</span>'; $('sPerf').innerHTML = '0<span>מושלמים</span>'; $('sCombo').innerHTML = '0<span>קומבו שיא</span>'; $('reviveBtn').classList.add('hidden');
+}
+function songTime(){ return nowT() - songStart; }
+
+// ---------- endless run ----------
+const runBpm = i => Math.min(150, 90 + Math.floor(i/16)*5);
+function startRun(){
+  $('startOv').classList.add('hidden'); $('endOv').classList.add('hidden'); $('hud').classList.remove('hidden');
+  const b0 = 60/runBpm(0);
+  songStart = nowT() + 0.4 + 4*b0;
+  for (let i=1;i<=4;i++) hat(songStart - i*b0, 1.6);
+  gates = []; rawDts = []; combo = maxCombo = perfects = goods = misses = wrongs = 0;
+  boost = 0; dist = 0; boardX = boardTarget = 2; flashes = []; particles = []; popups = []; glow = 0;
+  Object.assign(RUN, {lives:3, coins:0, coinMul:1, mulLeft:0, revived:false, nextBeatT:0, beatIdx:0, lane:2, drumIdx:0, beats:[], group:0});
+  phase = 'run';
+  const lbl = document.querySelectorAll('#hud .lbl'); lbl[0].textContent = 'חיים'; lbl[2].textContent = 'מטבעות';
+}
+function genAhead(st){
+  while (RUN.nextBeatT < st + LOOK + 0.6){
+    const i = RUN.beatIdx, t = RUN.nextBeatT; RUN.beats.push(t);
+    const rest = i > 8 && i % 4 === 3 && Math.random() < 0.5;
+    if (i >= 16 && i % 12 === 0){
+      // choice: two gates at once, at least two lanes apart
+      let a = Math.floor(Math.random()*5), b; do { b = Math.floor(Math.random()*5); } while (Math.abs(a-b) < 2);
+      const g = ++RUN.group; const boostFirst = Math.random() < .5;
+      gates.push({lane:a, t, dur:1, judged:false, result:null, group:g, tag: boostFirst ? 'בוסט' : 'מטבעות ×3', reward: boostFirst ? 'boost' : 'coins'});
+      gates.push({lane:b, t, dur:1, judged:false, result:null, group:g, tag: boostFirst ? 'מטבעות ×3' : 'בוסט', reward: boostFirst ? 'coins' : 'boost'});
+    } else if (!rest){
+      // melodic random walk over the learned notes
+      const step = [-2,-1,-1,0,1,1,2][Math.floor(Math.random()*7)]; RUN.lane = Math.max(0, Math.min(4, RUN.lane + step));
+      gates.push({lane:RUN.lane, t, dur:1, judged:false, result:null});
+    }
+    RUN.nextBeatT += 60/runBpm(i); RUN.beatIdx++;
+  }
+  // drums follow the beat grid
+  while (RUN.drumIdx < RUN.beats.length && RUN.beats[RUN.drumIdx] < st + 0.35){
+    const bt = RUN.beats[RUN.drumIdx], at = songStart + bt + offsets[mode], k = RUN.drumIdx % 4;
+    if (at > nowT() - 0.02){ if (k===0||k===2) kick(at, .6); else snare(at, .5); hat(at, .5); hat(at + 30/runBpm(RUN.drumIdx), .3); }
+    RUN.drumIdx++;
+  }
+  gates = gates.filter(g => g.t > st - 2);
+}
+function runHit(gt){
+  if (gt.group){ gates.forEach(o => { if (o.group === gt.group && o !== gt){ o.judged = true; o.result = 'skip'; } }); }
+  RUN.coins += RUN.coinMul; if (RUN.mulLeft > 0 && --RUN.mulLeft === 0) RUN.coinMul = 1;
+  if (gt.reward === 'boost'){ boost += 30; popup('בוסט!', '#7cf5ff'); }
+  if (gt.reward === 'coins'){ RUN.coinMul = 3; RUN.mulLeft = 8; popup('מטבעות ×3', '#ffd34d'); }
+}
+function runMiss(){
+  RUN.lives--; combo = 0; boost -= 25; wobble = 1; popup(RUN.lives > 0 ? 'פספוס · נשארו ' + RUN.lives : 'נפלת!', '#ff8fa3');
+  if (RUN.lives <= 0) runOver();
+}
+function runOver(){
+  phase = 'over'; RUN.deathSt = songTime() - offsets[mode];
+  const meters = Math.round(dist/10); const newBest = meters > RUN.best; if (newBest){ RUN.best = meters; try { localStorage.setItem('keyrider_best', meters); } catch(e){} }
+  $('endTitle').textContent = newBest ? 'שיא חדש!' : 'נפלת';
+  $('sAcc').innerHTML = meters + '<span>מטרים</span>'; $('sPerf').innerHTML = RUN.coins + '<span>מטבעות</span>'; $('sCombo').innerHTML = RUN.best + '<span>שיא</span>';
+  $('revealTxt').textContent = 'הגעת לקצב של ' + runBpm(RUN.beatIdx) + ' פעימות לדקה. כל התווים במסלול הם תווים שכבר למדת.';
+  $('calTxt').textContent = '';
+  $('reviveBtn').classList.toggle('hidden', RUN.revived); $('replayBtn').classList.add('hidden');
+  $('hud').classList.add('hidden'); $('endOv').classList.remove('hidden');
+}
+function showAdThenRevive(){
+  $('endOv').classList.add('hidden'); $('adOv').classList.remove('hidden'); let n = 3; $('adCount').textContent = n;
+  const iv = setInterval(() => { n--; $('adCount').textContent = n; if (n <= 0){ clearInterval(iv); $('adOv').classList.add('hidden'); revive(); } }, 1000);
+}
+function revive(){
+  RUN.revived = true; RUN.lives = 1; combo = 0;
+  const back = 2.2; gates = gates.filter(g => g.t < RUN.deathSt - 0.3); gates.forEach(g => g.judged = true);
+  songStart = nowT() - (RUN.deathSt - back);
+  RUN.nextBeatT = RUN.deathSt + 0.2; RUN.beats = RUN.beats.filter(b => b < RUN.deathSt - back); RUN.drumIdx = RUN.beats.length;
+  // re-grid: keep generating from the death point
+  phase = 'run'; $('hud').classList.remove('hidden'); popup('ממשיכים!', '#7cf5ff');
+}
+
+function press(lane, t, src){
+  if (!ctx) return;
+  const quietInstrument = src === 'midi' || src === 'mic';
+  if (lane >= 0 && !quietInstrument && phase !== 'replay') pluck(LANE_MIDI[lane], t);
+  if (lane >= 0) { keyEls[lane].classList.add('down'); setTimeout(()=>keyEls[lane].classList.remove('down'), 110); }
+  if (phase !== 'race' && phase !== 'run') return;
+  const st = t - songStart - offsets[mode];
+  let best = null, bestAbs = 9, near = null;
+  for (const gt of gates){
+    if (gt.judged) continue;
+    const dt = st - gt.t, a = Math.abs(dt);
+    if (a > W_ACCEPT) continue;
+    if (gt.lane === lane && a < bestAbs){ best = gt; bestAbs = a; }
+    if (!near || a < Math.abs(st - near.t)) near = gt;
+  }
+  if (best){
+    const dt = st - best.t; best.judged = true; rawDts.push(t - songStart - best.t);
+    const perfect = Math.abs(dt) <= W_PERFECT; best.result = perfect ? 'perfect' : 'good';
+    if (perfect){ perfects++; boost += 15; } else { goods++; boost += 8; }
+    combo++; maxCombo = Math.max(maxCombo, combo);
+    if (phase === 'run') runHit(best); else played.push({lane, t: st, dur: best.dur});
+    boardTarget = lane; best.fx = 1;
+    burst(lane, perfect);
+    popup(perfect ? 'מושלם!' : 'טוב', perfect ? '#ffe14d' : '#c7f9ff');
+    whoosh(t + 0.01);
+  } else if (lane < 0 || near){
+    wrongs++; combo = 0; wobble = 1; boost -= 6;
+    popup(near ? 'זה ' + NOTE_NAMES[near.lane] : 'תו מחוץ לטווח', '#ff8fa3');
+    if (near) flashes.push({lane: near.lane, life: 1});
+  }
+}
+function judgeMisses(st){
+  for (const gt of gates){
+    if (!gt.judged && st - gt.t > W_ACCEPT){
+      gt.judged = true; gt.result = 'miss'; misses++;
+      if (gt.group) gates.forEach(o => { if (o.group === gt.group && o !== gt){ o.judged = true; o.result = 'miss'; } });
+      if (phase === 'run'){ runMiss(); if (phase !== 'run') return; continue; }
+      combo = 0; boost -= 22; wobble = 0.7; popup('פספוס', '#ff8fa3');
+    }
+  }
+}
+function popup(text, color){ popups.push({text, color, life:1}); if (popups.length > 3) popups.shift(); }
+function burst(lane, big){
+  const n = big ? 26 : 14;
+  for (let i=0;i<n;i++){ const a = Math.random()*Math.PI*2, s = (big?1:0.6)*(0.4+Math.random()); particles.push({lane, x:0, y:0, vx:Math.cos(a)*s, vy:Math.sin(a)*s - 0.4, life:1, c:COLORS[lane]}); }
+}
+
+function endRace(){
+  phase = 'end'; $('hud').classList.add('hidden');
+  const total = SONG.length; const acc = Math.round(100*(perfects + goods*0.6)/total);
+  const field = [{name:'me', d:dist}, ...rivals.map(r=>({name:'r', d:r.d}))].sort((a,b)=>b.d-a.d);
+  const place = field.findIndex(x=>x.name==='me') + 1;
+  $('endTitle').textContent = place === 1 ? 'מקום 1!' : 'מקום ' + place;
+  $('sAcc').firstChild.nodeValue = acc + '%'; $('sPerf').firstChild.nodeValue = perfects; $('sCombo').firstChild.nodeValue = maxCombo;
+  const hits = perfects + goods;
+  $('revealTxt').innerHTML = hits >= total*0.6
+    ? 'זה מה שניגנת: <b>"אודה לשמחה"</b> של בטהובן. ' + hits + ' מתוך ' + total + ' תווים, בקצב, בידיים שלך.'
+    : 'עברת ' + hits + ' מתוך ' + total + ' שערים. עוד מרוץ אחד ותשמע איזה שיר מסתתר כאן.';
+  // auto calibration: median raw offset of hits, for the next race
+  if (rawDts.length >= 6 && mode !== 'touch'){
+    const s = rawDts.slice().sort((a,b)=>a-b); const med = s[Math.floor(s.length/2)];
+    const prev = offsets[mode]; offsets[mode] = Math.max(-0.05, Math.min(0.25, med));
+    try { localStorage.setItem('keyrush_offsets', JSON.stringify(offsets)); } catch(e){}
+    $('calTxt').textContent = 'כיול אוטומטי: ההשהיה של האורגן היא ' + Math.abs(Math.round(offsets[mode]*1000)) + ' מילישניות. המרוץ הבא כבר מקזז אותה.';
+  } else $('calTxt').textContent = '';
+  replayData = played.slice();
+  $('replayBtn').classList.toggle('hidden', !replayData.length);
+  if (replayData.length >= SONG.length*0.6) startReplay(); else $('endOv').classList.remove('hidden');
+}
+
+// ---------- replay: what you played, with the full band ----------
+let replayStart = 0;
+function startReplay(){
+  $('endOv').classList.add('hidden');
+  replayStart = nowT() + 0.5 + LEAD_BEATS*BEAT;
+  scheduleDrums(replayStart, SONG_BEATS, true);
+  scheduleBacking(replayStart);
+  (replayData||[]).forEach(p => lead(LANE_MIDI[p.lane] + 12, replayStart + p.t, Math.max(0.12, p.dur*BEAT*0.9)));
+  gates = (replayData||[]).map((p,i)=>({lane:p.lane, t:p.t, dur:p.dur, id:i, judged:false, result:null, fx:0, replay:true}));
+  particles = []; popups = []; flashes = []; boardTarget = 2; glow = 0;
+  phase = 'replay';
+}
+
+// ---------- render ----------
+let W=0,H=0,DPR=1;
+function resize(){ DPR = Math.min(2, window.devicePixelRatio||1); const r = cv.getBoundingClientRect(); W=r.width; H=r.height; cv.width=W*DPR; cv.height=H*DPR; g.setTransform(DPR,0,0,DPR,0,0); }
+window.addEventListener('resize', resize); resize();
+
+const buildings = []; (function(){ for (let i=0;i<26;i++) buildings.push(mkB(Math.random(), i%2?1:-1)); })();
+function mkB(z, side){ const w=0.18+Math.random()*0.22, h=0.35+Math.random()*0.9; const cols=3+Math.floor(Math.random()*3), rows=5+Math.floor(Math.random()*8);
+  const lit=[]; for(let i=0;i<cols*rows;i++) lit.push(Math.random()); return {z, side, w, h, cols, rows, lit, hue:[COLORS[Math.floor(Math.random()*5)]]}; }
+
+function proj(lanePos, z){ // lanePos in lane units (0..4 centres, -0.5..4.5 edges); z = 0 at hit line, 1 at LOOK
+  const horizon = H*0.30, base = H*0.80; const d = 1 + Math.max(-0.08, z)*12; const s = 1/d;
+  const halfW = W*0.5; const x = W/2 + ((lanePos+0.5)/5 - 0.5)*2*halfW*s; const y = horizon + (base - horizon)*s;
+  return {x, y, s, laneW: (2*halfW/5)*s};
+}
+
+function draw(t, st, dtSec){
+  const horizon = H*0.30, base = H*0.80;
+  // sky
+  const sky = g.createLinearGradient(0,0,0,horizon); sky.addColorStop(0,'#090418'); sky.addColorStop(1,'#2b0f52');
+  g.fillStyle = sky; g.fillRect(0,0,W,horizon+1);
+  // distant skyline
+  g.fillStyle = '#1a0b38';
+  for (let i=0;i<24;i++){ const x = (i/24)*W, w = W/24+1, h = 18 + ((i*37)%11)*5; g.fillRect(x, horizon-h, w, h); }
+  g.fillStyle = 'rgba(255,120,220,.25)'; g.fillRect(0, horizon-2, W, 2);
+  // ground
+  const gr = g.createLinearGradient(0,horizon,0,H); gr.addColorStop(0,'#14072c'); gr.addColorStop(1,'#07030f');
+  g.fillStyle = gr; g.fillRect(0,horizon,W,H-horizon);
+  // buildings (far to near)
+  const spd = (100+boost)/100;
+  buildings.forEach(b => { b.z -= dtSec*spd/LOOK*0.55; if (b.z < -0.06) Object.assign(b, mkB(1, b.side)); });
+  buildings.slice().sort((a,b)=>b.z-a.z).forEach(b => {
+    const p = proj(b.side>0 ? 5.2 : -1.2, b.z); const bw = b.w*W*p.s*1.6, bh = b.h*H*p.s*1.4;
+    const x = b.side>0 ? p.x : p.x - bw; const y = p.y - bh;
+    g.fillStyle = '#120a28'; g.fillRect(x, y, bw, bh);
+    g.strokeStyle = 'rgba(160,120,255,.25)'; g.lineWidth = 1; g.strokeRect(x+.5, y+.5, bw-1, bh-1);
+    const cw = bw/(b.cols*2+1), ch = bh/(b.rows*2+1); const thr = 0.82 - glow*0.6;
+    for (let r=0;r<b.rows;r++) for (let c=0;c<b.cols;c++){
+      if (b.lit[r*b.cols+c] < thr) continue;
+      g.fillStyle = b.lit[r*b.cols+c] > 0.93 ? b.hue[0] : 'rgba(255,214,140,.85)';
+      g.fillRect(x + (c*2+1)*cw, y + (r*2+1)*ch, cw, ch);
+    }
+  });
+  // road surface
+  const pL = proj(-0.5, 1), pR = proj(4.5, 1), nL = proj(-0.5, -0.08), nR = proj(4.5, -0.08);
+  g.fillStyle = 'rgba(30,14,64,.92)'; g.beginPath(); g.moveTo(pL.x,pL.y); g.lineTo(pR.x,pR.y); g.lineTo(nR.x,nR.y); g.lineTo(nL.x,nL.y); g.closePath(); g.fill();
+  // lane lines + hint glow per lane
+  for (let i=0;i<=5;i++){
+    const a = proj(i-0.5, 1), b = proj(i-0.5, -0.08);
+    g.strokeStyle = (i===0||i===5) ? 'rgba(255,120,220,.85)' : 'rgba(150,120,255,.35)'; g.lineWidth = (i===0||i===5)?3:1.5;
+    g.beginPath(); g.moveTo(a.x,a.y); g.lineTo(b.x,b.y); g.stroke();
+  }
+  // moving dashes for speed
+  if (phase !== 'race' || st >= 0) dist += dtSec*(100+boost);
+  for (let k=0;k<14;k++){
+    const z = 1 - (((dist/260) + k/14) % 1);
+    for (let i=0;i<5;i++){ const p = proj(i, z); g.fillStyle = 'rgba(200,180,255,' + (0.12*(1-z)) + ')'; g.fillRect(p.x - p.laneW*0.02, p.y, p.laneW*0.04, 6*p.s+1); }
+  }
+  // hit line
+  const h0 = proj(-0.5,0), h1 = proj(4.5,0);
+  g.strokeStyle = 'rgba(255,255,255,.55)'; g.lineWidth = 3; g.setLineDash([10,8]); g.beginPath(); g.moveTo(h0.x,h0.y); g.lineTo(h1.x,h1.y); g.stroke(); g.setLineDash([]);
+
+  // rivals (only those ahead are visible)
+  if (phase === 'race') rivals.forEach(r => {
+    const delta = r.d - dist; if (delta < 8 || delta > 520) return; const z = delta/520; const p = proj(r.lane, z);
+    drawBoard(p.x, p.y, p.laneW*0.6, r.hue, 0.85, true);
+  });
+
+  // gates (far to near)
+  const vis = gates.filter(gt => { const z = (gt.t - st)/LOOK; return z < 1.05 && z > -0.1 && !(gt.result==='miss' && z < -0.03) && !(gt.result==='skip'); })
+                   .sort((a,b)=>b.t-a.t);
+  vis.forEach(gt => drawGate(gt, (gt.t - st)/LOOK));
+
+  // board
+  boardX += (boardTarget - boardX)*Math.min(1, dtSec*14);
+  wobble = Math.max(0, wobble - dtSec*2.5);
+  const bp = proj(boardX, 0);
+  drawBoard(bp.x + Math.sin(t*40)*wobble*8, bp.y, bp.laneW*0.78, '#7cf5ff', 1, true);
+
+  // particles
+  particles.forEach(pt => { pt.life -= dtSec*2.4; pt.x += pt.vx*dtSec*260; pt.y += pt.vy*dtSec*260; pt.vy += dtSec*0.9; });
+  particles = particles.filter(pt => pt.life > 0);
+  g.globalCompositeOperation = 'lighter'; particles.forEach(pt => { const p = proj(pt.lane, 0); g.globalAlpha = pt.life*pt.life; g.fillStyle = pt.c; g.beginPath(); g.arc(p.x + pt.x, p.y - p.laneW*0.6 + pt.y, 2.5, 0, Math.PI*2); g.fill(); }); g.globalCompositeOperation = 'source-over';
+  g.globalAlpha = 1;
+
+  // popups
+  popups.forEach((pp,i) => { pp.life -= dtSec*1.8; });
+  popups = popups.filter(pp => pp.life > 0);
+  popups.forEach((pp,i) => {
+    g.globalAlpha = Math.min(1, pp.life*4); g.fillStyle = pp.color; g.font = '900 ' + Math.round(Math.min(34, W*0.075)) + 'px system-ui'; g.textAlign = 'center';
+    const py = H*0.55 - (1-pp.life)*30 - i*4; g.lineWidth = 6; g.strokeStyle = 'rgba(8,3,22,.85)'; g.lineJoin='round'; g.strokeText(pp.text, W/2, py); g.fillText(pp.text, W/2, py);
+  });
+  g.globalAlpha = 1;
+
+  // count-in / replay banner
+  if (st < 0 && (phase === 'race' || phase === 'run')){
+    const n = Math.ceil(-st/BEAT); g.fillStyle = '#fff'; g.font = '900 ' + Math.round(W*0.2) + 'px system-ui'; g.textAlign = 'center';
+    g.fillText(n > LEAD_BEATS ? '' : String(n), W/2, H*0.5);
+  }
+  if (phase === 'replay'){
+    g.fillStyle = 'rgba(0,0,0,.35)'; g.fillRect(0, 0, W, 64);
+    g.fillStyle = '#fff'; g.font = '900 20px system-ui'; g.textAlign = 'center'; g.fillText('הריפליי שלך · עם להקה מלאה', W/2, 30);
+    g.font = '600 13px system-ui'; g.fillStyle = '#cfc8f4'; g.fillText('כל תו כאן ניגנת אתה', W/2, 50);
+  }
+}
+
+function drawGate(gt, z){
+  const p = proj(gt.lane, z); const lw = p.laneW, c = COLORS[gt.lane];
+  const w = lw*0.86, h = lw*0.95; const x0 = p.x - w/2, x1 = p.x + w/2, yTop = p.y - h;
+  const passed = gt.result === 'perfect' || gt.result === 'good';
+  const alpha = passed ? Math.max(0, 1 + z*8) : 1;
+  g.globalAlpha = alpha;
+  g.shadowColor = c; g.shadowBlur = passed ? 30 : 14;
+  g.strokeStyle = c; g.lineWidth = Math.max(2, lw*0.07); g.lineCap = 'round';
+  g.beginPath(); g.moveTo(x0, p.y); g.lineTo(x0, yTop + w*0.25); g.quadraticCurveTo(x0, yTop, p.x, yTop); g.quadraticCurveTo(x1, yTop, x1, yTop + w*0.25); g.lineTo(x1, p.y); g.stroke();
+  g.shadowBlur = 0;
+  // floor pad where the post meets the road, so the gate stands on the road
+  g.fillStyle = c; g.globalAlpha = alpha*0.35; g.beginPath(); g.ellipse(p.x, p.y, w*0.55, Math.max(1.5, w*0.07), 0, 0, Math.PI*2); g.fill();
+  g.globalAlpha = alpha;
+  // long note: a held trail behind the gate
+  if (gt.dur >= 1.5 && !gt.replay){
+    const pe = proj(gt.lane, z + (gt.dur*BEAT*0.8)/LOOK); g.fillStyle = c; g.globalAlpha = alpha*0.25;
+    g.beginPath(); g.moveTo(p.x - w*0.18, p.y); g.lineTo(pe.x - pe.laneW*0.15, pe.y); g.lineTo(pe.x + pe.laneW*0.15, pe.y); g.lineTo(p.x + w*0.18, p.y); g.closePath(); g.fill(); g.globalAlpha = alpha;
+  }
+  // label: note name (city 1 scaffolding)
+  if (!gt.replay && z > 0.02){
+    const fs = Math.max(9, lw*0.34); g.font = '800 ' + fs + 'px system-ui'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillStyle = 'rgba(10,4,30,.75)'; const tw = g.measureText(NOTE_NAMES[gt.lane]).width + fs*0.6;
+    roundRect(p.x - tw/2, yTop + h*0.38 - fs*0.62, tw, fs*1.24, fs*0.4); g.fill();
+    g.fillStyle = '#fff'; g.fillText(NOTE_NAMES[gt.lane], p.x, yTop + h*0.38);
+    if (gt.tag){ const ts = Math.max(8, lw*0.24); g.font = '800 ' + ts + 'px system-ui'; const tw2 = g.measureText(gt.tag).width + ts*0.8;
+      g.fillStyle = gt.reward === 'boost' ? '#7cf5ff' : '#ffd34d'; roundRect(p.x - tw2/2, yTop - ts*1.5, tw2, ts*1.3, ts*0.5); g.fill();
+      g.fillStyle = '#120a2c'; g.fillText(gt.tag, p.x, yTop - ts*0.85); }
+    g.textBaseline = 'alphabetic';
+  }
+  g.globalAlpha = 1;
+  // key hint when the gate is close
+  if ((phase === 'race' || phase === 'run') && !gt.judged && z < 0.38 && z > -0.1) keyEls[gt.lane].classList.add('hint');
+}
+function roundRect(x,y,w,h,r){ g.beginPath(); g.moveTo(x+r,y); g.arcTo(x+w,y,x+w,y+h,r); g.arcTo(x+w,y+h,x,y+h,r); g.arcTo(x,y+h,x,y,r); g.arcTo(x,y,x+w,y,r); g.closePath(); }
+
+// hoverboard + rider seen from behind; the board hovers on a light cushion, the rider's feet stand on the deck
+function drawBoard(x, roadY, len, col, a, rider){
+  g.globalAlpha = a;
+  const hover = len*0.16, deckY = roadY - hover, th = len*0.07;
+  // light pool on the road under the board
+  const pool = g.createRadialGradient(x, roadY, 1, x, roadY, len*0.7); pool.addColorStop(0, col + 'aa'); pool.addColorStop(1, col + '00');
+  g.fillStyle = pool; g.beginPath(); g.ellipse(x, roadY, len*0.7, len*0.13, 0, 0, Math.PI*2); g.fill();
+  // thruster beams from deck to road
+  g.fillStyle = col + '55';
+  [-0.3, 0.3].forEach(o => { g.beginPath(); g.moveTo(x + o*len - len*0.06, deckY + th); g.lineTo(x + o*len + len*0.06, deckY + th); g.lineTo(x + o*len + len*0.1, roadY); g.lineTo(x + o*len - len*0.1, roadY); g.closePath(); g.fill(); });
+  // deck: rear view, a thin slab with rounded ends
+  g.fillStyle = '#1d1440'; roundRect(x - len/2, deckY, len, th, th/2); g.fill();
+  g.strokeStyle = col; g.lineWidth = Math.max(1.5, len*0.025); g.shadowColor = col; g.shadowBlur = 12; roundRect(x - len/2, deckY, len, th, th/2); g.stroke(); g.shadowBlur = 0;
+  if (rider){
+    const s = len; const footY = deckY; // feet rest exactly on the top of the deck
+    g.strokeStyle = '#2a2050'; g.fillStyle = '#2a2050'; g.lineCap = 'round'; g.lineJoin = 'round';
+    // shoes
+    g.fillStyle = '#f4f1ff'; roundRect(x - s*0.24, footY - s*0.05, s*0.13, s*0.05, s*0.02); g.fill(); roundRect(x + s*0.11, footY - s*0.05, s*0.13, s*0.05, s*0.02); g.fill();
+    // legs (knees bent, wide stance)
+    g.strokeStyle = '#3b2f7a'; g.lineWidth = s*0.075;
+    g.beginPath(); g.moveTo(x - s*0.175, footY - s*0.05); g.lineTo(x - s*0.13, footY - s*0.25); g.lineTo(x - s*0.06, footY - s*0.4); g.stroke();
+    g.beginPath(); g.moveTo(x + s*0.175, footY - s*0.05); g.lineTo(x + s*0.13, footY - s*0.25); g.lineTo(x + s*0.06, footY - s*0.4); g.stroke();
+    // torso (hoodie)
+    g.fillStyle = col; roundRect(x - s*0.13, footY - s*0.72, s*0.26, s*0.36, s*0.08); g.fill();
+    g.fillStyle = 'rgba(0,0,0,.18)'; roundRect(x - s*0.13, footY - s*0.47, s*0.26, s*0.11, s*0.04); g.fill();
+    // arms out for balance
+    g.strokeStyle = col; g.lineWidth = s*0.065;
+    g.beginPath(); g.moveTo(x - s*0.11, footY - s*0.66); g.lineTo(x - s*0.3, footY - s*0.58); g.lineTo(x - s*0.42, footY - s*0.62); g.stroke();
+    g.beginPath(); g.moveTo(x + s*0.11, footY - s*0.66); g.lineTo(x + s*0.3, footY - s*0.58); g.lineTo(x + s*0.42, footY - s*0.62); g.stroke();
+    // head + helmet
+    g.fillStyle = '#ffd8b8'; g.beginPath(); g.arc(x, footY - s*0.8, s*0.075, 0, Math.PI*2); g.fill();
+    g.fillStyle = '#f4f1ff'; g.beginPath(); g.arc(x, footY - s*0.815, s*0.085, Math.PI, 0); g.fill();
+    g.fillStyle = col; g.fillRect(x - s*0.085, footY - s*0.82, s*0.17, s*0.02);
+  }
+  g.globalAlpha = 1;
+}
+
+// ---------- loop ----------
+function loop(ms){
+  const t = ms/1000; const dtSec = Math.min(0.05, lastT ? t - lastT : 0.016); lastT = t;
+  keyEls.forEach(k => k.classList.remove('hint'));
+  let st = -9;
+  if (phase === 'race'){
+    if (mode === 'mic') pollMic();
+    st = songTime();
+    judgeMisses(st - offsets[mode]);
+    const target = Math.min(40, combo*3);
+    boost += (target - boost)*Math.min(1, dtSec*0.9); boost = Math.max(-45, Math.min(70, boost));
+    if (st > 0) rivals.forEach((r,i) => { r.d += dtSec*(100 + r.skill + Math.sin(t*0.7 + i*2)*6); });
+    glow = Math.min(1, glow + (combo > 4 ? dtSec*0.08 : -dtSec*0.05)); glow = Math.max(0, glow);
+    $('hCombo').textContent = combo; $('hSpeed').textContent = Math.round(100 + boost);
+    const place = 1 + rivals.filter(r => r.d > dist).length; $('hPlace').textContent = place + '/4';
+    if (st > SONG_BEATS*BEAT + 1.2) endRace();
+    draw(t, st - offsets[mode], dtSec);
+  } else if (phase === 'run'){
+    if (mode === 'mic') pollMic();
+    st = songTime(); genAhead(st - offsets[mode]);
+    judgeMisses(st - offsets[mode]);
+    const target = Math.min(40, combo*3);
+    boost += (target - boost)*Math.min(1, dtSec*0.9); boost = Math.max(-45, Math.min(80, boost));
+    glow = Math.max(0, Math.min(1, glow + (combo > 4 ? dtSec*0.08 : -dtSec*0.05)));
+    $('hCombo').textContent = combo; $('hPlace').textContent = '♥'.repeat(Math.max(0,RUN.lives)) || '–'; $('hSpeed').textContent = RUN.coins + (RUN.coinMul > 1 ? ' ×3' : '');
+    if (phase === 'run') draw(t, st - offsets[mode], dtSec); else draw(t, -9, dtSec);
+  } else if (phase === 'over'){
+    boost += (0 - boost)*dtSec; draw(t, RUN.deathSt, dtSec);
+  } else if (phase === 'replay'){
+    st = nowT() - replayStart;
+    gates.forEach(gt => { if (!gt.judged && st >= gt.t){ gt.judged = true; gt.result = 'perfect'; boardTarget = gt.lane; burst(gt.lane, true); } });
+    boost += (35 - boost)*dtSec; glow = Math.min(1, glow + dtSec*0.12);
+    if (st > SONG_BEATS*BEAT + 1.5){ phase = 'end'; $('endOv').classList.remove('hidden'); }
+    draw(t, st, dtSec);
+  } else {
+    // attract mode behind the menus
+    boost += (10 - boost)*dtSec; glow = 0.35;
+    draw(t, -9, dtSec);
+  }
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+// test hook for automated checks
+window.__keyrush = { get phase(){return phase;}, get gates(){return gates;}, startRace: () => { ensureAudio(); startRace(); }, press, nowT, get songStart(){return songStart;} };
+})();
+</script>
+</body>
+</html>
